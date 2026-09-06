@@ -9,8 +9,8 @@ test-results/
 .env.*
 !.env.example
 *.log
-uploads/
-minio-data/
-postgres-data/
-clamav-data/
+/uploads/
+/minio-data/
+/postgres-data/
+/clamav-data/
 *.tsbuildinfo

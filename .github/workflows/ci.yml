@@ -59,6 +59,8 @@ jobs:
           cache: npm
 
       - run: npm ci
+      - name: Check that upload route sources are included
+        run: test -f src/app/api/v1/uploads/route.ts && test -f 'src/app/api/v1/uploads/[id]/view/route.ts'
       - run: npm run db:generate
       - run: npm run db:migrate
       - run: npm run db:seed

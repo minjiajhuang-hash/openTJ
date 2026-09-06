@@ -14,5 +14,7 @@ postgres-data
 minio-data
 clamav-data
 uploads
+!src/app/api/v1/uploads
+!src/app/api/v1/uploads/**
 README.md
 tests
