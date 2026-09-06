@@ -1,0 +1,175 @@
+name: opentj
+
+x-app-environment: &app-environment
+  NODE_ENV: ${NODE_ENV:-development}
+  APP_ENV: ${APP_ENV:-local}
+  APP_URL: ${APP_URL:-http://127.0.0.1:3000}
+  DATABASE_URL: postgresql://${POSTGRES_USER:-opentj}:${POSTGRES_PASSWORD:-opentj}@postgres:5432/${POSTGRES_DB:-opentj}?schema=public
+  SESSION_SECRET: ${SESSION_SECRET:?Set SESSION_SECRET in .env}
+  DEMO_AUTH_ENABLED: ${DEMO_AUTH_ENABLED:-true}
+  ION_CLIENT_ID: ${ION_CLIENT_ID:-}
+  ION_CLIENT_SECRET: ${ION_CLIENT_SECRET:-}
+  ION_REDIRECT_URI: ${ION_REDIRECT_URI:-http://127.0.0.1:3000/api/v1/auth/ion/callback}
+  ION_AUTHORIZE_URL: ${ION_AUTHORIZE_URL:-https://ion.tjhsst.edu/oauth/authorize/}
+  ION_TOKEN_URL: ${ION_TOKEN_URL:-https://ion.tjhsst.edu/oauth/token/}
+  ION_REVOKE_URL: ${ION_REVOKE_URL:-https://ion.tjhsst.edu/oauth/revoke_token/}
+  ION_PROFILE_URL: ${ION_PROFILE_URL:-https://ion.tjhsst.edu/api/profile}
+  BOOTSTRAP_ADMIN_ION_IDS: ${BOOTSTRAP_ADMIN_ION_IDS:-}
+  COURSE_JOIN_CODE: ${COURSE_JOIN_CODE:-concrete-p4-demo}
+  S3_ENDPOINT: http://minio:9000
+  STORAGE_DRIVER: s3
+  S3_REGION: ${S3_REGION:-us-east-1}
+  S3_BUCKET: ${S3_BUCKET:-opentj-private}
+  S3_ACCESS_KEY: ${S3_ACCESS_KEY:-opentj}
+  S3_SECRET_KEY: ${S3_SECRET_KEY:-replace-this-minio-secret}
+  S3_FORCE_PATH_STYLE: "true"
+  CLAMAV_HOST: clamav
+  CLAMAV_PORT: "3310"
+  PDF_MAX_BYTES: ${PDF_MAX_BYTES:-20971520}
+  PDF_MAX_PAGES: ${PDF_MAX_PAGES:-200}
+  NEXT_TELEMETRY_DISABLED: "1"
+  PRESERVATION_HOLD: ${PRESERVATION_HOLD:-false}
+  TRUST_PROXY: ${TRUST_PROXY:-false}
+
+services:
+  postgres:
+    image: ${POSTGRES_IMAGE:-postgres:16-alpine}
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-opentj}
+      POSTGRES_USER: ${POSTGRES_USER:-opentj}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-opentj}
+    ports:
+      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+    security_opt:
+      - no-new-privileges:true
+
+  minio:
+    image: ${MINIO_IMAGE:-quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z}
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${S3_ACCESS_KEY:-opentj}
+      MINIO_ROOT_PASSWORD: ${S3_SECRET_KEY:-replace-this-minio-secret}
+    ports:
+      - "127.0.0.1:${MINIO_API_PORT:-9000}:9000"
+      - "127.0.0.1:${MINIO_CONSOLE_PORT:-9001}:9001"
+    volumes:
+      - minio-data:/data
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "http://127.0.0.1:9000/minio/health/ready"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+    security_opt:
+      - no-new-privileges:true
+
+  minio-init:
+    image: ${MINIO_MC_IMAGE:-minio/mc:RELEASE.2025-08-13T08-35-41Z}
+    restart: "no"
+    depends_on:
+      minio:
+        condition: service_healthy
+    environment:
+      S3_ENDPOINT: http://minio:9000
+      S3_BUCKET: ${S3_BUCKET:-opentj-private}
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY:-opentj}
+      S3_SECRET_KEY: ${S3_SECRET_KEY:-replace-this-minio-secret}
+    volumes:
+      - ./docker/minio-init.sh:/opt/opentj/minio-init.sh:ro
+    entrypoint: ["/bin/sh", "/opt/opentj/minio-init.sh"]
+    security_opt:
+      - no-new-privileges:true
+
+  clamav:
+    image: ${CLAMAV_IMAGE:-clamav/clamav:stable}
+    restart: unless-stopped
+    volumes:
+      - clamav-data:/var/lib/clamav
+    healthcheck:
+      test: ["CMD", "clamdscan", "--ping", "1"]
+      interval: 30s
+      timeout: 10s
+      retries: 20
+      start_period: 120s
+    security_opt:
+      - no-new-privileges:true
+
+  migrate:
+    build:
+      context: .
+      target: tasks
+    restart: "no"
+    environment: *app-environment
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command: ["/bin/sh", "docker/app-init.sh"]
+    security_opt:
+      - no-new-privileges:true
+
+  web:
+    build:
+      context: .
+      target: ${WEB_TARGET:-development}
+    restart: unless-stopped
+    init: true
+    environment: *app-environment
+    ports:
+      - "127.0.0.1:${APP_PORT:-3000}:3000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
+      clamav:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:3000/api/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+    security_opt:
+      - no-new-privileges:true
+
+  worker:
+    build:
+      context: .
+      target: tasks
+    restart: unless-stopped
+    init: true
+    environment: *app-environment
+    depends_on:
+      postgres:
+        condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
+      clamav:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    security_opt:
+      - no-new-privileges:true
+
+volumes:
+  postgres-data:
+  minio-data:
+  clamav-data:

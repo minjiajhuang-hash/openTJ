@@ -1,0 +1,610 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum AccountStatus {
+  ACTIVE
+  SUSPENDED
+  DEACTIVATED
+}
+
+enum CourseRole {
+  MEMBER
+  STAFF
+}
+
+enum PlatformRole {
+  PLATFORM_ADMIN
+}
+
+enum ContentKind {
+  ASSESSMENT
+  CALENDAR_EVENT
+  CALENDAR_UPDATE
+  NOTE
+  ADVICE
+  QUESTION
+}
+
+enum Visibility {
+  DRAFT
+  QUARANTINED
+  PUBLISHED
+  HIDDEN_BY_AUTHOR
+  HIDDEN_BY_MODERATOR
+  DELETED
+}
+
+enum AssessmentType {
+  TEST
+  QUIZ
+  ASSIGNMENT
+  OTHER
+}
+
+enum CalendarEventType {
+  ASSIGNMENT
+  ASSESSMENT
+  REMINDER
+  OTHER
+}
+
+enum NoteMode {
+  PLAIN_TEXT
+  MARKDOWN_LATEX
+  PDF
+}
+
+enum AdviceType {
+  GENERAL
+  ASSESSMENT_SPECIFIC
+}
+
+enum QuestionType {
+  SINGLE_CHOICE
+  SHORT_ANSWER
+  LONG_RESPONSE
+}
+
+enum ShortAnswerMode {
+  TEXT
+  NUMERIC
+}
+
+enum AttemptResult {
+  CORRECT
+  INCORRECT
+  UNGRADED
+}
+
+enum UploadStatus {
+  PENDING
+  QUARANTINED
+  SCANNING
+  CLEAN
+  REJECTED
+  FAILED
+}
+
+enum ReportReason {
+  ACADEMIC_INTEGRITY
+  HARASSMENT_HATE
+  PRIVACY
+  COPYRIGHT
+  UNSAFE_FILE
+  SPAM
+  OTHER
+}
+
+enum ReportStatus {
+  OPEN
+  ACTIONED
+  DISMISSED
+  APPEALED
+  CLOSED
+}
+
+enum ModerationActionType {
+  HIDE
+  RESTORE
+  LOCK
+  UNLOCK
+  DISMISS_REPORT
+  SUSPEND_USER
+  REINSTATE_USER
+}
+
+enum AppealStatus {
+  OPEN
+  UPHELD
+  OVERTURNED
+}
+
+model User {
+  id                String             @id @default(cuid())
+  ionId             String?            @unique
+  username          String             @unique
+  displayName       String
+  isStudent         Boolean            @default(false)
+  isTeacher         Boolean            @default(false)
+  accountStatus     AccountStatus      @default(ACTIVE)
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+  sessions          Session[]
+  memberships       CourseMembership[]
+  roleGrants        RoleGrant[]        @relation("RoleSubject")
+  grantedRoles      RoleGrant[]        @relation("RoleGrantor")
+  joinCodesCreated  CourseJoinCode[]
+  contentItems      ContentItem[]
+  revisions         ContentRevision[]
+  questionRevisions QuestionRevision[]
+  attempts          PracticeAttempt[]
+  uploads           Upload[]
+  reports           Report[]           @relation("ReportReporter")
+  reportsResolved   Report[]           @relation("ReportResolver")
+  moderationActions ModerationAction[]
+  appeals           Appeal[]           @relation("AppealAuthor")
+  appealsResolved   Appeal[]           @relation("AppealResolver")
+  auditEvents       AuditEvent[]
+  policyAcceptances PolicyAcceptance[]
+}
+
+model Session {
+  id            String   @id @default(cuid())
+  tokenHash     String   @unique
+  userId        String
+  expiresAt     DateTime
+  lastSeenAt    DateTime @default(now())
+  userAgentHash String?
+  ipHash        String?
+  createdAt     DateTime @default(now())
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, expiresAt])
+  @@index([expiresAt])
+}
+
+model OAuthTransaction {
+  id           String   @id @default(cuid())
+  stateHash    String   @unique
+  browserHash  String
+  codeVerifier String
+  returnTo     String
+  expiresAt    DateTime
+  createdAt    DateTime @default(now())
+
+  @@index([expiresAt])
+}
+
+model Course {
+  id            String             @id @default(cuid())
+  slug          String             @unique
+  name          String
+  description   String             @default("")
+  archivedAt    DateTime?
+  createdAt     DateTime           @default(now())
+  updatedAt     DateTime           @updatedAt
+  memberships   CourseMembership[]
+  joinCodes     CourseJoinCode[]
+  contentItems  ContentItem[]
+  questionBanks QuestionBank[]
+  skills        Skill[]
+  uploads       Upload[]
+  reports       Report[]
+  auditEvents   AuditEvent[]
+}
+
+model CourseMembership {
+  id        String     @id @default(cuid())
+  courseId  String
+  userId    String
+  role      CourseRole @default(MEMBER)
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+  course    Course     @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([courseId, userId])
+  @@index([userId, role])
+}
+
+model RoleGrant {
+  id          String       @id @default(cuid())
+  userId      String
+  role        PlatformRole
+  grantedById String?
+  createdAt   DateTime     @default(now())
+  user        User         @relation("RoleSubject", fields: [userId], references: [id], onDelete: Cascade)
+  grantedBy   User?        @relation("RoleGrantor", fields: [grantedById], references: [id], onDelete: SetNull)
+
+  @@unique([userId, role])
+}
+
+model CourseJoinCode {
+  id          String    @id @default(cuid())
+  courseId    String
+  codeHash    String    @unique
+  createdById String
+  expiresAt   DateTime?
+  revokedAt   DateTime?
+  createdAt   DateTime  @default(now())
+  course      Course    @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  createdBy   User      @relation(fields: [createdById], references: [id], onDelete: Restrict)
+
+  @@index([courseId, revokedAt, expiresAt])
+}
+
+model ContentItem {
+  id                String             @id @default(cuid())
+  courseId          String
+  authorId          String
+  kind              ContentKind
+  visibility        Visibility         @default(PUBLISHED)
+  locked            Boolean            @default(false)
+  version           Int                @default(1)
+  publishedAt       DateTime?
+  hiddenAt          DateTime?
+  deletedAt         DateTime?
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+  course            Course             @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  author            User               @relation(fields: [authorId], references: [id], onDelete: Restrict)
+  revisions         ContentRevision[]
+  assessment        Assessment?
+  calendarEvent     CalendarEvent?
+  calendarUpdate    CalendarUpdate?
+  note              Note?
+  advice            AdvicePost?
+  question          Question?
+  reports           Report[]
+  moderationActions ModerationAction[]
+
+  @@unique([id, courseId])
+  @@index([courseId, kind, visibility, createdAt])
+  @@index([authorId, visibility])
+}
+
+model ContentRevision {
+  id            String      @id @default(cuid())
+  contentItemId String
+  revision      Int
+  editorId      String
+  snapshot      Json
+  createdAt     DateTime    @default(now())
+  contentItem   ContentItem @relation(fields: [contentItemId], references: [id], onDelete: Cascade)
+  editor        User        @relation(fields: [editorId], references: [id], onDelete: Restrict)
+
+  @@unique([contentItemId, revision])
+  @@index([editorId, createdAt])
+}
+
+model Assessment {
+  contentItemId String                       @id
+  courseId      String
+  type          AssessmentType
+  title         String
+  summary       String                       @default("")
+  description   String                       @default("")
+  isMajor       Boolean                      @default(false)
+  contentItem   ContentItem                  @relation(fields: [contentItemId, courseId], references: [id, courseId], onDelete: Cascade)
+  topics        AssessmentTopic[]
+  templates     AssessmentQuestionTemplate[]
+  calendarEvent CalendarEvent?
+  questionBank  QuestionBank?
+  advicePosts   AdvicePost[]
+
+  @@unique([contentItemId, courseId])
+  @@index([courseId, title])
+}
+
+model AssessmentTopic {
+  id           String     @id @default(cuid())
+  assessmentId String
+  position     Int
+  label        String
+  assessment   Assessment @relation(fields: [assessmentId], references: [contentItemId], onDelete: Cascade)
+
+  @@unique([assessmentId, position])
+}
+
+model AssessmentQuestionTemplate {
+  id           String     @id @default(cuid())
+  assessmentId String
+  position     Int
+  description  String
+  assessment   Assessment @relation(fields: [assessmentId], references: [contentItemId], onDelete: Cascade)
+
+  @@unique([assessmentId, position])
+}
+
+model CalendarEvent {
+  contentItemId String            @id
+  courseId      String
+  type          CalendarEventType
+  title         String
+  details       String            @default("")
+  allDay        Boolean           @default(true)
+  startsAt      DateTime?
+  endsAt        DateTime?
+  startDate     DateTime?         @db.Date
+  endDate       DateTime?         @db.Date
+  assessmentId  String?
+  contentItem   ContentItem       @relation(fields: [contentItemId, courseId], references: [id, courseId], onDelete: Cascade)
+  assessment    Assessment?       @relation(fields: [assessmentId, courseId], references: [contentItemId, courseId], onDelete: Cascade)
+  updates       CalendarUpdate[]
+
+  @@unique([contentItemId, courseId])
+  @@unique([assessmentId, courseId])
+  @@index([courseId, startDate])
+  @@index([courseId, startsAt])
+}
+
+model CalendarUpdate {
+  contentItemId   String        @id
+  courseId        String
+  calendarEventId String
+  body            String
+  contentItem     ContentItem   @relation(fields: [contentItemId, courseId], references: [id, courseId], onDelete: Cascade)
+  calendarEvent   CalendarEvent @relation(fields: [calendarEventId, courseId], references: [contentItemId, courseId], onDelete: Cascade)
+
+  @@unique([contentItemId, courseId])
+  @@index([calendarEventId])
+}
+
+model Note {
+  contentItemId String      @id
+  courseId      String
+  title         String
+  mode          NoteMode
+  body          String?
+  uploadId      String?     @unique
+  contentItem   ContentItem @relation(fields: [contentItemId, courseId], references: [id, courseId], onDelete: Cascade)
+  upload        Upload?     @relation(fields: [uploadId, courseId], references: [id, courseId], onDelete: Restrict)
+
+  @@unique([contentItemId, courseId])
+  @@unique([uploadId, courseId])
+  @@index([courseId, title])
+}
+
+model AdvicePost {
+  contentItemId String      @id
+  courseId      String
+  type          AdviceType
+  title         String
+  body          String
+  assessmentId  String?
+  contentItem   ContentItem @relation(fields: [contentItemId, courseId], references: [id, courseId], onDelete: Cascade)
+  assessment    Assessment? @relation(fields: [assessmentId, courseId], references: [contentItemId, courseId], onDelete: Cascade)
+
+  @@unique([contentItemId, courseId])
+  @@index([courseId, type, assessmentId])
+}
+
+model QuestionBank {
+  id           String     @id @default(cuid())
+  courseId     String
+  assessmentId String     @unique
+  title        String
+  active       Boolean    @default(true)
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+  course       Course     @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  assessment   Assessment @relation(fields: [assessmentId, courseId], references: [contentItemId, courseId], onDelete: Cascade)
+  questions    Question[]
+
+  @@unique([assessmentId, courseId])
+  @@unique([id, courseId])
+  @@index([courseId, active])
+}
+
+model Skill {
+  id        String                  @id @default(cuid())
+  courseId  String
+  name      String
+  createdAt DateTime                @default(now())
+  course    Course                  @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  revisions QuestionRevisionSkill[]
+
+  @@unique([courseId, name])
+}
+
+model Question {
+  contentItemId String             @id
+  courseId      String
+  bankId        String
+  contentItem   ContentItem        @relation(fields: [contentItemId, courseId], references: [id, courseId], onDelete: Cascade)
+  bank          QuestionBank       @relation(fields: [bankId, courseId], references: [id, courseId], onDelete: Cascade)
+  revisions     QuestionRevision[]
+
+  @@unique([contentItemId, courseId])
+  @@index([bankId])
+}
+
+model QuestionRevision {
+  id                String                  @id @default(cuid())
+  questionId        String
+  revision          Int
+  createdById       String
+  type              QuestionType
+  prompt            String
+  shortAnswerMode   ShortAnswerMode?
+  canonicalAnswer   String?
+  acceptedAnswers   Json?
+  caseSensitive     Boolean                 @default(false)
+  numericAnswer     Decimal?                @db.Decimal(30, 12)
+  unit              String?
+  absoluteTolerance Decimal?                @db.Decimal(30, 12)
+  relativeTolerance Decimal?                @db.Decimal(30, 12)
+  detailedSolution  String?
+  createdAt         DateTime                @default(now())
+  question          Question                @relation(fields: [questionId], references: [contentItemId], onDelete: Cascade)
+  createdBy         User                    @relation(fields: [createdById], references: [id], onDelete: Restrict)
+  choices           QuestionChoice[]
+  skills            QuestionRevisionSkill[]
+  attempts          PracticeAttempt[]
+
+  @@unique([questionId, revision])
+  @@index([questionId, createdAt])
+}
+
+model QuestionChoice {
+  id          String           @id @default(cuid())
+  revisionId  String
+  position    Int
+  text        String
+  isCorrect   Boolean          @default(false)
+  explanation String?
+  revision    QuestionRevision @relation(fields: [revisionId], references: [id], onDelete: Cascade)
+
+  @@unique([revisionId, position])
+}
+
+model QuestionRevisionSkill {
+  revisionId String
+  skillId    String
+  revision   QuestionRevision @relation(fields: [revisionId], references: [id], onDelete: Cascade)
+  skill      Skill            @relation(fields: [skillId], references: [id], onDelete: Cascade)
+
+  @@id([revisionId, skillId])
+}
+
+model PracticeAttempt {
+  id             String           @id @default(cuid())
+  userId         String
+  revisionId     String
+  idempotencyKey String
+  submitted      Json
+  result         AttemptResult
+  feedback       Json?
+  createdAt      DateTime         @default(now())
+  user           User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  revision       QuestionRevision @relation(fields: [revisionId], references: [id], onDelete: Restrict)
+
+  @@unique([userId, idempotencyKey])
+  @@index([userId, createdAt])
+  @@index([revisionId])
+}
+
+model Upload {
+  id            String       @id @default(cuid())
+  courseId      String
+  ownerId       String
+  idempotencyKey String
+  status        UploadStatus @default(PENDING)
+  originalName  String
+  objectKey     String       @unique
+  detectedMime  String?
+  bytes         Int
+  pages         Int?
+  sha256        String?
+  failureReason String?
+  scanAttempts  Int          @default(0)
+  nextScanAt    DateTime     @default(now())
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+  course        Course       @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  owner         User         @relation(fields: [ownerId], references: [id], onDelete: Restrict)
+  note          Note?
+
+  @@unique([id, courseId])
+  @@index([status, nextScanAt])
+  @@unique([ownerId, idempotencyKey])
+  @@index([courseId, ownerId])
+}
+
+model Report {
+  id            String             @id @default(cuid())
+  courseId      String
+  contentItemId String
+  reporterId    String
+  reason        ReportReason
+  details       String             @default("")
+  status        ReportStatus       @default(OPEN)
+  resolvedById  String?
+  resolvedAt    DateTime?
+  createdAt     DateTime           @default(now())
+  updatedAt     DateTime           @updatedAt
+  course        Course             @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  contentItem   ContentItem        @relation(fields: [contentItemId], references: [id], onDelete: Cascade)
+  reporter      User               @relation("ReportReporter", fields: [reporterId], references: [id], onDelete: Restrict)
+  resolvedBy    User?              @relation("ReportResolver", fields: [resolvedById], references: [id], onDelete: SetNull)
+  actions       ModerationAction[]
+  appeals       Appeal[]
+
+  @@index([courseId, status, createdAt])
+  @@index([contentItemId])
+}
+
+model ModerationAction {
+  id            String               @id @default(cuid())
+  courseId      String
+  contentItemId String?
+  reportId      String?
+  actorId       String
+  type          ModerationActionType
+  reason        String
+  before        Json?
+  after         Json?
+  requestId     String
+  createdAt     DateTime             @default(now())
+  contentItem   ContentItem?         @relation(fields: [contentItemId], references: [id], onDelete: SetNull)
+  report        Report?              @relation(fields: [reportId], references: [id], onDelete: SetNull)
+  actor         User                 @relation(fields: [actorId], references: [id], onDelete: Restrict)
+  appeals       Appeal[]
+
+  @@index([courseId, createdAt])
+  @@index([contentItemId])
+}
+
+model Appeal {
+  id                 String           @id @default(cuid())
+  reportId           String
+  moderationActionId String           @unique
+  authorId           String
+  message            String
+  status             AppealStatus     @default(OPEN)
+  resolvedById       String?
+  resolution         String?
+  resolvedAt         DateTime?
+  createdAt          DateTime         @default(now())
+  updatedAt          DateTime         @updatedAt
+  report             Report           @relation(fields: [reportId], references: [id], onDelete: Cascade)
+  moderationAction   ModerationAction @relation(fields: [moderationActionId], references: [id], onDelete: Cascade)
+  author             User             @relation("AppealAuthor", fields: [authorId], references: [id], onDelete: Restrict)
+  resolvedBy         User?            @relation("AppealResolver", fields: [resolvedById], references: [id], onDelete: SetNull)
+
+  @@index([reportId, status])
+}
+
+model AuditEvent {
+  id         String   @id @default(cuid())
+  actorId    String?
+  courseId   String?
+  action     String
+  targetType String
+  targetId   String
+  requestId  String
+  metadata   Json?
+  createdAt  DateTime @default(now())
+  actor      User?    @relation(fields: [actorId], references: [id], onDelete: SetNull)
+  course     Course?  @relation(fields: [courseId], references: [id], onDelete: SetNull)
+
+  @@index([courseId, createdAt])
+  @@index([targetType, targetId])
+  @@index([createdAt])
+}
+
+model PolicyAcceptance {
+  id         String   @id @default(cuid())
+  userId     String
+  version    String
+  acceptedAt DateTime @default(now())
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, version])
+}

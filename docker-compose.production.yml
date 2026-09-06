@@ -1,0 +1,20 @@
+# Use with: docker compose -f docker-compose.yml -f docker-compose.production.yml up --build -d
+# Set APP_URL to the HTTPS origin served by your TLS reverse proxy.
+services:
+  web:
+    build:
+      target: runner
+    environment:
+      NODE_ENV: production
+      APP_ENV: production
+      DEMO_AUTH_ENABLED: "false"
+  migrate:
+    environment:
+      NODE_ENV: production
+      APP_ENV: production
+      DEMO_AUTH_ENABLED: "false"
+  worker:
+    environment:
+      NODE_ENV: production
+      APP_ENV: production
+      DEMO_AUTH_ENABLED: "false"
