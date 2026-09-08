@@ -55,10 +55,10 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: '22.9.0'
           cache: npm
 
-      - run: npm ci
+      - run: npm ci --include=dev --engine-strict
       - name: Check that upload route sources are included
         run: test -f src/app/api/v1/uploads/route.ts && test -f 'src/app/api/v1/uploads/[id]/view/route.ts'
       - run: npm run db:generate
@@ -104,10 +104,10 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: '22.9.0'
           cache: npm
 
-      - run: npm ci
+      - run: npm ci --include=dev --engine-strict
       - run: npx playwright install --with-deps chromium
 
       - name: Build and start the complete stack

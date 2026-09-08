@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1.7
 
-ARG NODE_VERSION=22-bookworm-slim
+ARG NODE_VERSION=22.9.0-bookworm-slim
 
 FROM node:${NODE_VERSION} AS base
 WORKDIR /app
@@ -12,7 +12,7 @@ RUN apt-get update \
 FROM base AS dependencies
 COPY package.json package-lock.json* ./
 RUN --mount=type=cache,target=/root/.npm \
-    if [ -f package-lock.json ]; then npm ci; else npm install; fi
+    if [ -f package-lock.json ]; then npm ci --include=dev --engine-strict; else npm install --include=dev --engine-strict; fi
 
 FROM dependencies AS builder
 COPY . .

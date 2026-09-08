@@ -11,9 +11,12 @@ Development uses clearly labeled fictional accounts and fixtures.
 
 ## Local development without ION credentials
 
-Requirements: Node.js 22.16 or newer, npm and Git. Docker is optional for native
+Requirements: Node.js 22.9.0 or newer within Node 22, npm and Git. CI and the
+default Docker image target exactly 22.9.0 for Director compatibility. Docker is optional for native
 development. The portable database helper runs actual PostgreSQL on loopback and
 keeps its data inside this checkout; it does not install a system service.
+
+For the existing Director deployment, see [Node 22.9 setup](docs/NODE-22.9.md).
 
 ```powershell
 npm ci

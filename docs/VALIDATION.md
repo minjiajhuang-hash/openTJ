@@ -1,5 +1,19 @@
 # Delivery validation
 
+## Node 22.9 compatibility update
+
+The compatibility update was checked on Windows with the official Node 22.9.0
+binary (SHA-256 verified) and npm 10.8.3: clean engine-strict installation,
+Prisma client generation, lint, 37 unit tests with coverage, type checking and
+production compilation/standalone packaging. The dependency audit reports zero
+vulnerabilities. CI now repeats the Linux checks and full service/browser suite
+on exactly Node 22.9.0; see the commit's GitHub Actions result for its outcome.
+
+These checks do not establish that the application fits Director's 100 MB limit
+or that live ION credentials and external production services are configured.
+
+## Original delivery
+
 Validated on Windows with Node.js 22, real PostgreSQL 18, private local file storage,
 and ClamAV 1.4.6 with verified official signatures. Local personas replace only
 the external identity handoff; course data, sessions, authorization, grading,
