@@ -22,6 +22,9 @@ of becoming warnings. Do not remove these pins without testing on Node 22.9.0.
 
 ## Updating an existing Director checkout
 
+If npm is being killed by Director's memory limit, use the
+[prepared deployment package](DIRECTOR.md) instead of installing on the host.
+
 In the site's Web Terminal:
 
 ```sh

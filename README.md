@@ -17,6 +17,8 @@ development. The portable database helper runs actual PostgreSQL on loopback and
 keeps its data inside this checkout; it does not install a system service.
 
 For the existing Director deployment, see [Node 22.9 setup](docs/NODE-22.9.md).
+For a host with too little memory to install/build, use the
+[prepared Director deployment package](docs/DIRECTOR.md).
 
 ```powershell
 npm ci

@@ -18,3 +18,5 @@ uploads
 !src/app/api/v1/uploads/**
 README.md
 tests
+release
+release-artifacts

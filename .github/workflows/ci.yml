@@ -150,3 +150,53 @@ jobs:
       - name: Stop containers
         if: always()
         run: docker compose down --volumes --remove-orphans
+
+  deployment:
+    name: Prepare Director download
+    needs: [quality, e2e]
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: opentj
+          POSTGRES_USER: opentj
+          POSTGRES_PASSWORD: opentj
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U opentj -d opentj"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.9.0'
+      - name: Build portable Debian files
+        run: docker build --target deployment --output type=local,dest=release .
+      - name: Verify dependency scope and package contents
+        run: node scripts/verify-deployment.mjs release
+      - name: Test the exported files without npm installation
+        run: |
+          docker build --target base --tag opentj-deployment-base .
+          docker run --rm --network host \
+            -e DATABASE_URL \
+            -v "$PWD/release:/release" \
+            -v "$PWD/scripts/smoke-deployment.mjs:/smoke-deployment.mjs:ro" \
+            opentj-deployment-base node /smoke-deployment.mjs
+      - name: Package download and checksum
+        run: |
+          chmod +x release/*.sh
+          mkdir release-artifacts
+          tar -czf release-artifacts/opentj-director-linux-x64.tar.gz -C release .
+          cd release-artifacts
+          sha256sum opentj-director-linux-x64.tar.gz > SHA256SUMS
+      - uses: actions/upload-artifact@v4
+        with:
+          name: opentj-director-linux-x64
+          path: release-artifacts/
+          compression-level: 0
+          retention-days: 30

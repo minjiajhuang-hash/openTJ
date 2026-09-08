@@ -27,10 +27,22 @@ USER node
 EXPOSE 3000
 CMD ["npm", "run", "dev", "--", "--hostname", "0.0.0.0"]
 
-# The worker and migration jobs need Prisma's CLI and tsx at runtime. They are
-# intentionally isolated from the smaller public web image.
-# Worker/migration jobs need source files and Prisma, but no Next.js build.
-FROM development AS tasks
+# Operational jobs install only their runtime dependencies, not the web build,
+# browser/lint/test tools or embedded development PostgreSQL distribution.
+FROM base AS task-dependencies
+COPY deployment/tasks/package.json deployment/tasks/package-lock.json ./
+COPY prisma ./prisma
+RUN --mount=type=cache,target=/root/.npm npm ci --omit=dev --engine-strict \
+    && npm run db:generate
+
+FROM task-dependencies AS tasks
+COPY src/worker.ts ./src/worker.ts
+COPY src/lib/server/db.ts src/lib/server/storage.ts src/lib/server/env.ts src/lib/server/crypto.ts src/lib/server/retention.ts src/lib/server/pdf-scan.ts ./src/lib/server/
+COPY scripts/pdf-inspect.mjs ./scripts/pdf-inspect.mjs
+COPY scripts/check-env.mjs ./scripts/check-env.mjs
+COPY docker/app-init.sh ./docker/app-init.sh
+RUN chown -R node:node /app
+USER node
 ENV NODE_ENV=production
 ENTRYPOINT ["/usr/bin/dumb-init", "--"]
 CMD ["npm", "run", "worker"]
@@ -50,3 +62,10 @@ USER nextjs
 EXPOSE 3000
 ENTRYPOINT ["/usr/bin/dumb-init", "--"]
 CMD ["node", "server.js"]
+
+# Export portable Linux files for hosts such as Director, without a Docker daemon.
+FROM scratch AS deployment
+COPY --from=runner /app /web
+COPY --from=tasks /app /tasks
+COPY deployment/load-env.mjs deployment/runtime-env.mjs deployment/run.sh deployment/migrate.sh deployment/worker.sh /
+COPY scripts/check-env.mjs /check-env.mjs
